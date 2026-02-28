@@ -1,11 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
+    Updater,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
-    ContextTypes,
-    filters
+    Filters,
 )
 import os
 
@@ -84,7 +83,7 @@ def remove_approved_user(user_id):
 APPROVED_USERS = load_approved_users()
 
 
-async def check_approval(update: Update):
+def check_approval(update: Update, context):
     user_id = str(update.effective_user.id)
 
     if user_id in APPROVED_USERS:
@@ -104,20 +103,20 @@ async def check_approval(update: Update):
         ]
     ]
 
-    await update.get_bot().send_message(
+    context.bot.send_message(
         chat_id=ADMIN_ID,
         text=text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    await update.message.reply_text("⏳ Your request has been sent to the admin. Please wait.")
+    update.message.reply_text("⏳ Your request has been sent to the admin. Please wait.")
     return False
 
 
 # ---------------- START ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_approval(update):
+def start(update: Update, context):
+    if not check_approval(update, context):
         return
 
     keyboard = [
@@ -125,7 +124,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("ℹ️ About", callback_data="about")]
     ]
 
-    await update.message.reply_text(
+    update.message.reply_text(
         "📁 College Notes\nSelect an option:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -153,9 +152,8 @@ def get_unit_buttons(subject):
 
 
 # ---------------- CALLBACK HANDLER ----------------
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def button(update: Update, context):
     query = update.callback_query
-    await query.answer()
     data = query.data.split("|")
 
     # ADMIN APPROVAL
@@ -164,31 +162,31 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         APPROVED_USERS.add(user_id)
         save_approved_user(user_id)
 
-        await query.edit_message_text("✅ User Approved")
-        await query.bot.send_message(user_id, "🎉 You are approved! Use /start to continue.")
+        query.edit_message_text("✅ User Approved")
+        context.bot.send_message(user_id, "🎉 You are approved! Use /start to continue.")
         return
 
     if data[0] == "reject":
         user_id = data[1]
-        await query.edit_message_text("❌ User Rejected")
-        await query.bot.send_message(user_id, "❌ Your access was not approved.")
+        query.edit_message_text("❌ User Rejected")
+        context.bot.send_message(user_id, "❌ Your access was not approved.")
         return
 
     # REQUIRE APPROVAL
     user_id = str(query.from_user.id)
     if user_id not in APPROVED_USERS:
-        await query.message.reply_text("⏳ Waiting for admin approval…")
+        query.message.reply_text("⏳ Waiting for admin approval…")
         return
 
     # BROWSE SUBJECT LIST
     if data[0] == "browse":
         start = int(data[1])
-        await query.edit_message_text("📂 Browse Files:", reply_markup=get_subject_buttons(start))
+        query.edit_message_text("📂 Browse Files:", reply_markup=get_subject_buttons(start))
 
     # SUBJECT SELECTED
     elif data[0] == "subject":
         subject = data[1]
-        await query.edit_message_text(
+        query.edit_message_text(
             f"📘 {subject}\nSelect a Unit:",
             reply_markup=get_unit_buttons(subject)
         )
@@ -201,22 +199,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = FILES.get(subject, {}).get(unit)
 
         if not file_id:
-            await query.message.reply_text("❌ File is unavailable !!")
+            query.message.reply_text("❌ File is unavailable !!")
             return
 
-        await query.message.reply_document(file_id)
+        context.bot.send_document(chat_id=query.message.chat_id, document=file_id)
 
         APPROVED_USERS.discard(user_id)
         remove_approved_user(user_id)
 
-        await query.message.reply_text(
+        query.message.reply_text(
             "✔️ You used your 1-time access.\n"
             "🔄 Request approval again to download another file."
         )
 
     # ABOUT SECTION
     elif data[0] == "about":
-        await query.edit_message_text("ℹ️ College Notes Bot\nCreated to share notes easily.\nBy ._.A Y U S H._.")
+        query.edit_message_text("ℹ️ College Notes Bot\nCreated to share notes easily.\nBy ._.A Y U S H._.")
 
     # MAIN MENU
     elif data[0] == "main":
@@ -224,23 +222,26 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📂 Browse Files", callback_data="browse|0")],
             [InlineKeyboardButton("ℹ️ About", callback_data="about")]
         ]
-        await query.edit_message_text("📁 College Notes\nSelect an option:", reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text("📁 College Notes\nSelect an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 # ---------------- ADMIN FILE-ID HELPER ----------------
-async def get_file_id(update: Update, context):
+def get_file_id(update: Update, context):
     if update.effective_user.id != ADMIN_ID:
         return
+
     if update.message.document:
-        await update.message.reply_text(f"FILE ID:\n{update.message.document.file_id}")
+        update.message.reply_text(f"FILE ID:\n{update.message.document.file_id}")
 
 
 # ---------------- RUN BOT ----------------
-app = ApplicationBuilder().token(TOKEN).build()
+updater = Updater(TOKEN, use_context=True)
+dp = updater.dispatcher
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button))
-app.add_handler(MessageHandler(filters.Document.ALL, get_file_id))
+dp.add_handler(CommandHandler("start", start))
+dp.add_handler(CallbackQueryHandler(button))
+dp.add_handler(MessageHandler(Filters.document, get_file_id))
 
 print("Bot is running...")
-app.run_polling()
+updater.start_polling()
+updater.idle()
