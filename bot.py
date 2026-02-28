@@ -9,7 +9,7 @@ from telegram.ext import (
 import os
 
 # ---------------- BOT CONFIG ----------------
-TOKEN = "8689919670:AAFBCUA7KrWzG5eCPdxeEXvqNQyRfeRRaJo"
+TOKEN = "8689919670:AAFBCUA7KrWzG5eCPdxeEXvqNQyRfeRRaJo"       # <- PUT YOUR TOKEN HERE SAFELY
 ADMIN_ID = 7111408119
 APPROVED_FILE = "approved_users.txt"
 
@@ -110,7 +110,9 @@ def check_approval(update: Update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    update.message.reply_text("⏳ Your request has been sent to the admin. Please wait.")
+    update.message.reply_text(
+        "⏳ Your request has been sent to the admin. Please wait."
+    )
     return False
 
 
@@ -154,6 +156,7 @@ def get_unit_buttons(subject):
 # ---------------- CALLBACK HANDLER ----------------
 def button(update: Update, context):
     query = update.callback_query
+    query.answer()  # <-- IMPORTANT FIX
     data = query.data.split("|")
 
     # ADMIN APPROVAL
@@ -183,7 +186,6 @@ def button(update: Update, context):
         start = int(data[1])
         query.edit_message_text("📂 Browse Files:", reply_markup=get_subject_buttons(start))
 
-    # SUBJECT SELECTED
     elif data[0] == "subject":
         subject = data[1]
         query.edit_message_text(
@@ -191,7 +193,6 @@ def button(update: Update, context):
             reply_markup=get_unit_buttons(subject)
         )
 
-    # UNIT SELECTED → SEND FILE
     elif data[0] == "unit":
         subject = data[1]
         unit = data[2]
@@ -212,26 +213,31 @@ def button(update: Update, context):
             "🔄 Request approval again to download another file."
         )
 
-    # ABOUT SECTION
     elif data[0] == "about":
         query.edit_message_text("ℹ️ College Notes Bot\nCreated to share notes easily.\nBy ._.A Y U S H._.")
 
-    # MAIN MENU
     elif data[0] == "main":
         keyboard = [
             [InlineKeyboardButton("📂 Browse Files", callback_data="browse|0")],
             [InlineKeyboardButton("ℹ️ About", callback_data="about")]
         ]
-        query.edit_message_text("📁 College Notes\nSelect an option:", reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text(
+            "📁 College Notes\nSelect an option:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 
 # ---------------- ADMIN FILE-ID HELPER ----------------
-def get_file_id(update: Update, context):
+def get_file_id(update, context):
     if update.effective_user.id != ADMIN_ID:
         return
 
     if update.message.document:
         update.message.reply_text(f"FILE ID:\n{update.message.document.file_id}")
+
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+        update.message.reply_text(f"PHOTO FILE ID:\n{file_id}")
 
 
 # ---------------- RUN BOT ----------------
@@ -241,6 +247,7 @@ dp = updater.dispatcher
 dp.add_handler(CommandHandler("start", start))
 dp.add_handler(CallbackQueryHandler(button))
 dp.add_handler(MessageHandler(Filters.document, get_file_id))
+dp.add_handler(MessageHandler(Filters.photo, get_file_id))  # <-- added
 
 print("Bot is running...")
 updater.start_polling()
